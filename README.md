@@ -13,7 +13,7 @@ Parsing a really large 5GB Wikipedia XML file on a single node instance.
     Note, there are various other solutions for this problem. In this article my main objective is to explain ways to experiment and utilize Pyspark functionalities for managing big data on a single instance installation.
     
     
-Method 1 : Pysaprk way¶
+## Method 1 : Pysaprk way¶
 
 In this article, I am creating a pipeline for getting the data (batch wise) which can be given to pyspark for parsing since data file is too big to be given as single file.
 
@@ -28,39 +28,56 @@ Configuration which worked best for me are following:
        spark = SparkSession(sc)
 
 
-    Steps invlved:
+ Steps invlved:
 
-1. Reading the file split by \n.
+### 1. Reading the file split by \n.
 
         file_rdd = spark.read.text("./xml_data/enwiki-latest-abstract.xml", wholetext=False)
         file_chunk = file_rdd.take(chunk_size) #chunk_size = 1,000,000
         
         
         
-2. Parallelise the RDD to further partition.
+### 2. Parallelise the RDD to further partition.
 
         myRDD = sc.parallelize(file_chunk))
         
-3. Distribute the partitioned RDDs.
+### 3. Distribute the partitioned RDDs.
 
-4. Write the parser for getting fields out from the xml.
+### 4. Write the parser for getting fields out from the xml.
 
         def get_values(i,x,elements_parsed):
         
         
-5. Register the parser with Spark for it to identify.
+### 5. Register the parser with Spark for it to identify.
 
         pyspark.sql.udf.UDFRegistration.register(name="get_values", f = get_values, returnType=StringType())
         
         
         
- To be able to parse 1 Million records using Pyspark, it requires to create a physical plan of execution to divide the rdds' and re-distribute based on system configuration such that Pyspark does not run into issues like 'Out Of Memory' and Lost connection issues.
+Note : To be able to parse 1 Million records using Pyspark, it requires to create a physical plan of execution to divide the rdds' and re-distribute based on system configuration such that Pyspark does not run into issues like 'Out Of Memory' and Lost connection issues.
         
-6. Get one partitioned RDD (calling it chunk) at a time to give it to Spark since Spark holds data in memory.
-7. Further partition the chunk and distribute the partitioned chunk to all the nodes along with registered function.
-8. Collect results, remove duplicate, clean fringe cases, append to final list.
-9. Write the final list to DataFrame.
+        
+### 6. Get one partitioned RDD (calling it chunk) at a time to give it to Spark since Spark holds data in memory.
 
+        chunk = myRDD.mapPartitionsWithIndex(lambda i, it: islice(it, 0, count) if i == idx_ else []).collect()
+
+### 7. Further partition the chunk and distribute the partitioned chunk to all the nodes along with registered function.
+
+        myRDD_ = sc.parallelize(chunk)  
+        myRDD_ = myRDD_.repartition(repartition_size)
+### 8. Collect results, remove duplicate, clean fringe cases, append to final list.
+
+        elements_parsed = sc.runJob(myRDD_, lambda part: [get_values(i,x,elements_parsed) for i,x in enumerate(part)])
+        parsed_records_list = elements_parsed_rm_frindges(elements_parsed)  
+        
+        gc.collect()
+        spark.catalog.clearCache()
+   
+### 9. Write the final list to DataFrame.
+        pd.DataFrame(parsed_records)
+
+
+![alt text](https://github.com/Deepika-Sharma08/Large-XML-Parsing-using-Pyspark/blob/master/image/1.png?raw=true)
 
 
  
